@@ -1,0 +1,135 @@
+// thread_pool.c
+#include "thread_pool.h"
+#include "http.h"
+
+#include <string.h>
+#include <stdlib.h>
+
+void* worker_thread(void * arg) {
+    thread_pool_t* pool = (thread_pool_t*)arg;
+    
+    while (1) {
+        pthread_mutex_lock(&pool->mutex);
+        
+        while (!pool->shutdown  &&  isEmpty(pool->worker_queue)) {
+            pthread_cond_wait(&pool->cond, &pool->mutex);
+        }
+        
+        if (pool->shutdown) {
+            pthread_mutex_unlock(&pool->mutex);
+            break;
+        }
+        
+        // Dequeue work item and process
+        int fd = dequeue(pool->worker_queue);
+        
+        pthread_mutex_unlock(&pool->mutex);
+        
+        char buff[1000];
+        ssize_t bytes_recv =  recv(fd, buff, sizeof(buff) -1, 0);
+
+        http_request_t request;
+
+        int status;
+        char status_message[20];
+        char mime_type[20];            
+        char body[4096];    //what we are actually sending ex: html page, text, etc...
+        size_t body_size;
+
+        if (bytes_recv > 0){               
+
+            parse_http_request(buff, &request);
+                
+            //build full path
+            char path[30];
+            build_full_path("www", request.path, path, 30);
+            printf("request.path = %s\n built path = %s\n", request.path, path);
+            if (path_exists(path)){
+                status = 200;
+                strcpy(status_message, "OK");
+                
+                if (strcmp(path, "www/") == 0)
+                {
+                    strcpy(mime_type, "html");
+                    //open file and load it to the body
+                    FILE *file = fopen("www/index.html", "rb");
+                    if (file == NULL)
+                    {   
+                        perror("Couldnt open file");
+                    } else {
+                        //find size
+                        fseek(file, 0, SEEK_END);
+                        long file_size = ftell(file);
+                        fseek(file, 0, SEEK_SET);
+
+                        fread(body, 1, file_size, file);
+                        body_size = file_size;
+                    }
+                    fclose(file);
+                } else {
+                    
+                    //TODO: get mimetype, body and bodysize and set the parameters
+
+                }
+
+            } else {
+                
+                //STATUS 404 NOT FOUND
+                status = 404;
+                strcpy(status_message, "NOT FOUND");
+                strcpy(mime_type, "html");
+                //open file and load it to the body
+                FILE *file = fopen("www/404.html", "rb");
+                if (file == NULL)
+                {   
+                    perror("Couldnt open file");
+                } else {
+                    //find size
+                    fseek(file, 0, SEEK_END);
+                    long file_size = ftell(file);
+                    fseek(file, 0, SEEK_SET);
+
+                    fread(body, 1, file_size, file);
+                    body_size = file_size;
+                }
+                fclose(file);
+            }
+
+        } else if(bytes_recv == 0) {
+            /*Client closed connection before processing*/
+        } else{
+            perror("recv failed in worker thread");
+        }
+
+
+        //send the response
+        if (strcmp(request.method,"GET") == 0)
+        {
+            send_http_response(fd, status, status_message, mime_type, body, body_size);
+        } else {
+            send_http_response(fd, status, status_message, mime_type, NULL, 0);
+        }
+
+        close(fd);
+
+    }
+    
+    return NULL;
+}
+
+thread_pool_t* create_thread_pool(int num_threads, worker_queue_t* queue) {
+    thread_pool_t* pool = malloc(sizeof(thread_pool_t));    
+    pool->threads = malloc(sizeof(pthread_t) * num_threads);
+    pool->num_threads = num_threads;
+    pool->shutdown = 0;
+    pool->worker_queue = queue; // Link the queue before creating threads
+    
+    pthread_mutex_init(&pool->mutex, NULL);
+    pthread_cond_init(&pool->cond, NULL);
+    
+    for (int i = 0; i < num_threads; i++) {
+        pthread_create(&pool->threads[i], NULL, worker_thread, pool);
+    }
+
+    return pool;
+}   
