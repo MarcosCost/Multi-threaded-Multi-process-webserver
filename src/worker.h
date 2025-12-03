@@ -4,10 +4,14 @@
 #include <sys/un.h>
 #include <signal.h>
 #include <errno.h>
+#include <pthread.h>
+#include <stdint.h>
 
 #include "shared_mem.h"
 #include "semaphores.h"
 #include "http.h"
+#include "worker_queue.h"
+#include "thread_pool.h"
 
 int recv_fd_from_master(int master_socket);
 

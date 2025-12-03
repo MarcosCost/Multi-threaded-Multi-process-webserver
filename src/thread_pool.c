@@ -1,9 +1,5 @@
 // thread_pool.c
 #include "thread_pool.h"
-#include "http.h"
-
-#include <string.h>
-#include <stdlib.h>
 
 void* worker_thread(void * arg) {
     thread_pool_t* pool = (thread_pool_t*)arg;
@@ -122,7 +118,7 @@ thread_pool_t* create_thread_pool(int num_threads, worker_queue_t* queue) {
     pool->threads = malloc(sizeof(pthread_t) * num_threads);
     pool->num_threads = num_threads;
     pool->shutdown = 0;
-    pool->worker_queue = queue; // Link the queue before creating threads
+    pool->worker_queue = queue;
     
     pthread_mutex_init(&pool->mutex, NULL);
     pthread_cond_init(&pool->cond, NULL);

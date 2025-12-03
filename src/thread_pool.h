@@ -4,6 +4,11 @@
 
 #include <pthread.h>
 #include <worker_queue.h>
+#include "http.h"
+
+#include <string.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 typedef struct {
     pthread_t* threads;
