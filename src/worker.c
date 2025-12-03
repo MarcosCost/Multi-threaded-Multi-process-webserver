@@ -4,7 +4,6 @@
 #define RESET "\033[0m"
 
 // A map to translate master FDs to local FDs.
-// We assume file descriptors won't exceed this value.
 #define FD_MAP_SIZE 1024
 
 // Struct to pass arguments to our sync thread
@@ -13,9 +12,6 @@ typedef struct {
     int* fd_map;
     pthread_mutex_t* map_mutex;
 } pull_sync_args_t;
-
-// The recv_fd_from_master function is no longer needed,
-// as its logic is now inside pull_recv_sync.
 
 int dequeue_shm(shared_memory_t * shm, semaphores_t * sems){
 
@@ -45,7 +41,7 @@ void worker_main(shared_memory_t * shm, semaphores_t * sems, int master_socket){
     for (int i = 0; i < FD_MAP_SIZE; ++i) {
         fd_map[i] = -1; // Initialize with an invalid value.
     }
-    pthread_mutex_t map_mutex = PTHREAD_MUTEX_INITIALIZER;
+    pthread_mutex_t map_mutex = PTHREAD_MUTEX_INITIALIZER;  //TODO revise this shit cause I bet theres a diferent more believable way to do this
 
     shutdown_signal=0;
     signal(SIGINT, signal_worker);

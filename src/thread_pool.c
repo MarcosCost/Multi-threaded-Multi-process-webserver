@@ -36,10 +36,12 @@ void* worker_thread(void * arg) {
 
             parse_http_request(buff, &request);
                 
-            //build full path
+            //full path
             char path[30];
             build_full_path("www", request.path, path, 30);
-            printf("request.path = %s\n built path = %s\n", request.path, path);
+
+            printf("DEBUG:\nrequest.path = %s\nBuilt path = %s\n", request.path, path);
+            
             if (path_exists(path)){
                 status = 200;
                 strcpy(status_message, "OK");
@@ -64,8 +66,23 @@ void* worker_thread(void * arg) {
                     fclose(file);
                 } else {
                     
-                    //TODO: get mimetype, body and bodysize and set the parameters
+                    //TODO: body and bodysize and set the parameters
+                    strcpy(mime_type, get_mime_type(path));
+                    //open file and load it to the body
+                    FILE *file = fopen(path, "rb");
+                    if (file == NULL)
+                    {   
+                        perror("Couldnt open file");
+                    } else {
+                        //find size
+                        fseek(file, 0, SEEK_END);
+                        long file_size = ftell(file);
+                        fseek(file, 0, SEEK_SET);
 
+                        fread(body, 1, file_size, file);
+                        body_size = file_size;
+                    }
+                    fclose(file);
                 }
 
             } else {

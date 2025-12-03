@@ -19,4 +19,6 @@ int build_full_path(const char* root, const char* path, char* output, size_t out
 
 int path_exists(const char* path);
 
+const char* get_mime_type(const char *filename);
+
 #endif

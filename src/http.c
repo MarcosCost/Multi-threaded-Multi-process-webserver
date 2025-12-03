@@ -58,3 +58,34 @@ int path_exists(const char* path) {
     }
     return 0;
 }
+
+const char* get_mime_type(const char *filename){
+
+    if (filename == NULL) {
+        return "application/octet-stream"; 
+    }
+
+    const char *extension = strrchr(filename, '.');
+
+    if (extension == filename) {
+        return "application/octet-stream";
+    }
+
+
+    if (strcmp(extension, ".html") == 0) {
+        return "text/html";
+    } else if (strcmp(extension, ".css") == 0) {
+        return "text/css";
+    } else if (strcmp(extension, ".js") == 0) {
+        return "application/javascript";
+    } else if (strcmp(extension, ".png") == 0) {
+        return "image/png";
+    } else if (strcmp(extension, ".jpg") == 0 || strcmp(extension, ".jpeg") == 0) {
+        return "image/jpeg"; 
+    } else if (strcmp(extension, ".pdf") == 0) {
+        return "application/pdf";
+    }
+    
+    return "application/octet-stream";
+
+}

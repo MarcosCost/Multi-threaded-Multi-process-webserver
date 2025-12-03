@@ -1,0 +1,98 @@
+/* -------------------------------------------------------------------------- */
+/* 1. CSS Reset and Global Styles                                             */
+/* -------------------------------------------------------------------------- */
+
+/* Box sizing reset for easier layout management */
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
+/* Base styles for the document body */
+body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Arial', sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    color: #333;
+    background-color: #f8f8f8;
+}
+
+/* Remove list style from unordered lists */
+ul {
+    list-style: none;
+    padding: 0;
+}
+
+/* Style for hyperlinks */
+a {
+    color: #007bff;
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+/* -------------------------------------------------------------------------- */
+/* 2. Main Layout Styles                                                      */
+/* -------------------------------------------------------------------------- */
+
+/* Main content container for centering and max-width */
+.container {
+    max-width: 1200px;
+    margin: 0 auto; /* Center the container horizontally */
+    padding: 20px;
+}
+
+/* Style for headers (e.g., in a navigation bar) */
+header {
+    background-color: #ffffff;
+    padding: 15px 0;
+    border-bottom: 1px solid #ddd;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Style for a simple primary button */
+.btn-primary {
+    display: inline-block;
+    padding: 10px 20px;
+    background-color: #007bff;
+    color: #ffffff;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: background-color 0.3s ease;
+}
+
+.btn-primary:hover {
+    background-color: #0056b3;
+}
+
+/* Style for a specific ID element */
+#main-title {
+    color: #1a1a1a;
+    text-align: center;
+    margin-top: 40px;
+}
+
+/* -------------------------------------------------------------------------- */
+/* 3. Media Queries (Responsiveness)                                          */
+/* -------------------------------------------------------------------------- */
+
+/* Styles applied only for screens smaller than 768px (e.g., mobile devices) */
+@media (max-width: 768px) {
+    body {
+        font-size: 14px; /* Slightly smaller text on mobile */
+    }
+
+    .container {
+        padding: 10px; /* Less padding on small screens */
+    }
+    
+    #main-title {
+        font-size: 24px;
+        margin-top: 20px;
+    }
+}
