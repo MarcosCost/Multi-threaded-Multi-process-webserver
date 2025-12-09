@@ -15,8 +15,6 @@
 
 void send_fd_to_worker(int worker_socket, int fd_to_send);
 
-void dequeue_shm(shared_memory_t * shm, semaphores_t * sems);
-
 void master_main(int server_fd, shared_memory_t * shm, semaphores_t * sems, int (*worker_sockets)[2] , config_t * conf);
 
 #endif
