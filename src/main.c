@@ -124,6 +124,8 @@ void signal_handler(int signum){
     destroy_semaphores(&sems);
     printf("  Done\n");
 
+    free(pids);
+
     exit(0);
 }
 

@@ -68,7 +68,24 @@ void* worker_thread(void * arg) {
                     fclose(file);
                 } else {
                     
-                    //TODO: get mimetype, body and bodysize and set the parameters
+                    strcpy(mime_type, get_mimetype(path));
+
+                    //open file and load it to the body
+
+                    FILE *file = fopen(path, "rb");
+                    if (file == NULL)
+                    {   
+                        perror("Couldnt open file");
+                    } else {
+                        //find size
+                        fseek(file, 0, SEEK_END);
+                        long file_size = ftell(file);
+                        fseek(file, 0, SEEK_SET);
+
+                        fread(body, 1, file_size, file);
+                        body_size = file_size;
+                    }
+                    fclose(file);
 
                 }
 
@@ -133,3 +150,6 @@ thread_pool_t* create_thread_pool(int num_threads, worker_queue_t* queue) {
 
     return pool;
 }   
+
+
+void destroy_thread_pool(thread_pool_t* pool);

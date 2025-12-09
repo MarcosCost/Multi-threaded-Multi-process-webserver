@@ -1,10 +1,5 @@
 #include "worker.h"
 
-#include "worker_queue.h"
-#include "thread_pool.h"
-#include <pthread.h>
-#include <stdint.h>
-
 #define GREY "\033[37m"
 #define RESET "\033[0m"
 

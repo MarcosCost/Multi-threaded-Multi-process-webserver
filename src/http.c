@@ -58,3 +58,26 @@ int path_exists(const char* path) {
     }
     return 0;
 }
+
+char * get_mimetype(const char * filename) {
+    const char * dot = strrchr(filename, '.');
+
+    // If no dot is found, return a default binary type
+    if (!dot) {
+        return "application/octet-stream";
+    }
+
+    // Compare the extension (you can add more here)
+    if (strcmp(dot, ".html") == 0) return "text/html";
+    if (strcmp(dot, ".css")  == 0) return "text/css";
+    if (strcmp(dot, ".js")   == 0) return "application/javascript";
+    if (strcmp(dot, ".jpg")  == 0) return "image/jpeg";
+    if (strcmp(dot, ".jpeg") == 0) return "image/jpeg";
+    if (strcmp(dot, ".png")  == 0) return "image/png";
+    if (strcmp(dot, ".gif")  == 0) return "image/gif";
+    if (strcmp(dot, ".json") == 0) return "application/json";
+    if (strcmp(dot, ".txt")  == 0) return "text/plain";
+
+    // Default if the extension is unknown
+    return "application/octet-stream";
+}
