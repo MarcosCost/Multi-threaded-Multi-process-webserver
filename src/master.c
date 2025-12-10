@@ -1,5 +1,4 @@
 #include "master.h"
-
 #include "stats.h"
 
 #define GREY "\033[37m"
@@ -28,6 +27,9 @@ void send_fd_to_worker(int worker_socket, int fd_to_send) {
 
 void master_main(int server_fd, shared_memory_t * shm, semaphores_t * sems, int (*worker_sockets)[2] , config_t * conf){
 
+    // Variável estática para o Round-Robin
+    static int current_worker = 0;
+
     while(1){
 
         int client_fd = accept(server_fd, NULL, NULL);
@@ -38,7 +40,7 @@ void master_main(int server_fd, shared_memory_t * shm, semaphores_t * sems, int 
 
         add_connection(shm, sems);
         add_request_total(shm, sems);
-        
+
 
         if (sem_trywait(sems->empty_slots) == -1) {
             // This is the non-blocking way to check if the queue is full.
@@ -71,11 +73,12 @@ void master_main(int server_fd, shared_memory_t * shm, semaphores_t * sems, int 
             remove_connection(shm, sems);
             continue;
         }
-        
-        // Send fd to all workers
-        for (int i = 0; i < conf->num_workers; i++) {
-            send_fd_to_worker(worker_sockets[i][1], client_fd);
-        }
+
+        // Envia apenas para o worker atual
+        send_fd_to_worker(worker_sockets[current_worker][1], client_fd);
+
+        // Atualiza para o próximo worker circularmente
+        current_worker = (current_worker + 1) % conf->num_workers;
 
         sem_wait(sems->queue_mutex);
         shm->queue.socket_fds[shm->queue.rear] = client_fd;
@@ -84,7 +87,7 @@ void master_main(int server_fd, shared_memory_t * shm, semaphores_t * sems, int 
         sem_post(sems->queue_mutex);
 
         sem_post(sems->filled_slots);
-        printf(GREY"DEBUG: master.c enqueued %d"RESET"\n", client_fd);
+        printf(GREY"DEBUG: master.c enqueued %d (sent to worker %d)"RESET"\n", client_fd, current_worker);
 
         close(client_fd);  // master doesn't need it anymore
     }
