@@ -2,6 +2,7 @@
 #include "thread_pool.h"
 #include "http.h"
 #include "stats.h"
+#include "logger.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -137,11 +138,16 @@ void* worker_thread(void * arg) {
                 send_http_response(fd, status, status_message, mime_type, NULL, 0);
             }
             add_bytes_transferred(pool->shm, pool->sems, body_size);
+
+            
         } else {
             // Resposta vazia (pode acontecer em erros graves ou HEAD)
             send_http_response(fd, status, status_message, (status == 200 ? mime_type : "text/html"), NULL, 0);
             add_bytes_transferred(pool->shm, pool->sems, 0);
         }
+
+        logger_log_request("127.0.0.1", request.method, request.path, status, body_size);
+        add_status_code(pool->shm, pool->sems, status);
 
         add_status_code(pool->shm, pool->sems, status);
 

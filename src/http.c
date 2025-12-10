@@ -1,5 +1,7 @@
 #include "http.h"
 
+#include "logger.h"
+
 //
 //HTTP Response Builder
 ///////////////////////
@@ -19,6 +21,7 @@ void send_http_response(int fd, int status, const char* status_msg, const char* 
     if (body && body_len > 0) {
         send(fd, body, body_len, 0);
     }
+
 }
 
 //
