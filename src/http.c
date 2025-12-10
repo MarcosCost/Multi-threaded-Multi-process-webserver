@@ -31,21 +31,28 @@ void send_http_response(int fd, int status, const char* status_msg, const char* 
 // HTTP Request Parser
 ///////////////////////
 int parse_http_request(const char* buffer, http_request_t* req) {
-
+    // Procura o fim da primeira linha
     char* line_end = strstr(buffer, "\r\n");
-
     if (!line_end) return -1;
 
     char first_line[1024];
     size_t len = line_end - buffer;
 
-    // Proteção contra buffer overflow
+    // Proteção contra buffer overflow na cópia local
     if (len >= sizeof(first_line)) len = sizeof(first_line) - 1;
 
     strncpy(first_line, buffer, len);
     first_line[len] = '\0';
 
-    if (sscanf(first_line, "%s %s %s", req->method, req->path, req->version) != 3) return -1;
+    // CORREÇÃO DE SEGURANÇA:
+    // Usamos %15s e %511s para garantir que o sscanf não escreve mais
+    // do que o tamanho das structs (definido em http.h)
+    // method[16] -> %15s
+    // path[512]  -> %511s
+    // version[16]-> %15s
+    if (sscanf(first_line, "%15s %511s %15s", req->method, req->path, req->version) != 3) {
+        return -1;
+    }
 
     return 0;
 }

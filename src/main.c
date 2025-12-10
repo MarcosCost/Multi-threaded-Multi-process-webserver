@@ -9,9 +9,10 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <stdlib.h>
-#include <sys/wait.h> // Necessário para wait()
+#include <sys/wait.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <pthread.h>
 
 #define RED "\033[31m"
 #define RESET "\033[0m"
@@ -30,7 +31,7 @@ int create_server_socket(int port);
 
 int main(void){
 
-    printf(PURPLE"\n=== WEB SERVER STARTING ==="RESET"\n\n");
+    printf(PURPLE"\n=== WEB SERVER STARTING (Shared Socket Architecture) ==="RESET"\n\n");
 
     ///////////////////////////////////////////////
     // Common Resources and signal handler Setup //
@@ -81,14 +82,19 @@ int main(void){
 
     pthread_create(&stats_thread, NULL, start_stats, shm);
 
-    // Setup Socket Pairs for IPC (Passing FDs)
-    int worker_sockets[conf.num_workers][2];  // [read_end, write_end]
-    for (int i = 0; i < conf.num_workers; i++) {
-        if (socketpair(AF_UNIX, SOCK_STREAM, 0, worker_sockets[i]) == -1) {
-            perror("socketpair");
-            return -1;
-        }
+    // --- CORREÇÃO DEADLOCK: Socket Pair Único e Partilhado ---
+    // Em vez de N canais, usamos um canal partilhado.
+    // [0] Leitura (Workers), [1] Escrita (Master)
+    int ipc_socket[2];
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, ipc_socket) == -1) {
+        perror("socketpair");
+        return -1;
     }
+
+    // Aumentar buffer para 512KB para aguentar picos de carga (opcional mas recomendado)
+    int buff_size = 512 * 1024;
+    setsockopt(ipc_socket[1], SOL_SOCKET, SO_SNDBUF, &buff_size, sizeof(buff_size));
+    setsockopt(ipc_socket[0], SOL_SOCKET, SO_RCVBUF, &buff_size, sizeof(buff_size));
 
     //////////////////
     // Fork Workers //
@@ -103,28 +109,23 @@ int main(void){
         if (pid == 0)
         {
             // --- WORKER PROCESS ---
-            close(server_socket); // Workers don't listen on the main port
+            close(server_socket);
 
-            // Close sockets belonging to other workers
-            for (int j = 0; j < conf.num_workers; j++) {
-                if (j != i) {
-                    close(worker_sockets[j][0]);
-                    close(worker_sockets[j][1]);
-                }
-            }
-            close(worker_sockets[i][1]); // Worker closes its own write end (it only reads FDs)
+            // O Worker apenas LÊ do socket partilhado
+            close(ipc_socket[1]);
 
             printf("Initializing worker %d\n", i);
-            worker_main(shm, &sems, worker_sockets[i][0]);
 
-            free(pids); // Child doesn't need the pids array
+            // Passamos o socket de leitura partilhado
+            worker_main(shm, &sems, ipc_socket[0]);
+
+            free(pids);
             exit(0);
         }
         else if (pid > 0)
         {
             // --- MASTER PROCESS ---
             pids[i] = pid;
-            close(worker_sockets[i][0]);  // Master doesn't need read end
         }
         else
         {
@@ -133,8 +134,10 @@ int main(void){
         }
     }
 
-    // Master main loop
-    master_main(server_socket, shm, &sems, worker_sockets, &conf);
+    // --- MASTER MAIN LOOP ---
+    // O Master apenas ESCREVE no socket partilhado
+    close(ipc_socket[0]);
+    master_main(server_socket, shm, &sems, ipc_socket[1], &conf);
 
     return 0;
 }
@@ -144,19 +147,18 @@ void signal_handler(int signum){
     printf("\r  ");
     printf(PURPLE"\n=== SHUTTING DOWN SERVER on signal"RED" %d "PURPLE"==="RESET"\n", signum);
 
-    // --- CORREÇÃO: Matar processos filhos (Anti-Zombies) ---
     printf("  Terminating worker processes...\n");
     if (pids != NULL) {
         for (int i = 0; i < conf.num_workers; i++) {
             if (pids[i] > 0) {
-                kill(pids[i], SIGTERM); // Envia sinal para terminar
-                wait(NULL);             // Espera que o processo morra efetivamente
+                kill(pids[i], SIGTERM);
             }
         }
+        // Esperar efetivamente que morram para evitar zombies
+        while(wait(NULL) > 0);
         free(pids);
     }
     printf("  Workers terminated.\n");
-    // -------------------------------------------------------
 
     printf("  Destroying shared memory:\n");
     destroy_shared_memory(shm);
@@ -166,7 +168,6 @@ void signal_handler(int signum){
     destroy_semaphores(&sems);
     printf("  Done\n");
 
-    // Cancel stats thread
     pthread_cancel(stats_thread);
     pthread_join(stats_thread, NULL);
 
@@ -178,11 +179,9 @@ int create_server_socket(int port) {
     if (sockfd < 0) return -1;
 
     int opt = 1;
-    // Permite reutilizar a porta imediatamente após reiniciar o servidor
     setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
     struct sockaddr_in addr;
-
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = INADDR_ANY;
     addr.sin_port = htons(port);
@@ -193,7 +192,7 @@ int create_server_socket(int port) {
         return -1;
     }
 
-    if (listen(sockfd, 128) < 0) {
+    if (listen(sockfd, 1024) < 0) { // Aumentado backlog
         perror("Listen failed");
         close(sockfd);
         return -1;

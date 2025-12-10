@@ -4,6 +4,9 @@
 #include <stdio.h>
 
 #define HASH_SIZE 128 // Tamanho fixo para buckets da hash (simples)
+#define YELLOW "\033[33m"
+#define CYAN   "\033[36m"
+#define RESET  "\033[0m"
 
 // Função de Hash simples (DJB2)
 static unsigned long hash_func(const char *str) {
@@ -93,6 +96,10 @@ void cache_put(cache_t *cache, const char *path, const void *data, size_t size) 
 
     // 2. Eviction Policy (LRU): Remover da cauda enquanto não houver espaço
     while (cache->current_size + size > cache->capacity && cache->tail) {
+        #ifdef DEBUG
+        printf(YELLOW "[CACHE] Evicting %s to make space (Need: %zu, Curr: %zu)" RESET "\n",
+               cache->tail->path, size, cache->current_size);
+        #endif
         evict_entry(cache, cache->tail);
     }
 
@@ -141,6 +148,9 @@ int cache_get(cache_t *cache, const char *path, void **data_out, size_t *size_ou
     while (curr) {
         if (strcmp(curr->path, path) == 0) {
             // Cache Hit!
+            #ifdef DEBUG
+            printf(CYAN "[CACHE] HIT: %s" RESET "\n", path);
+            #endif
             *size_out = curr->size;
 
             // CORREÇÃO: Tratamento especial para ficheiros vazios ou malloc(0)

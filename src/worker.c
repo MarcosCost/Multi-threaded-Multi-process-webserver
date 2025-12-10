@@ -1,142 +1,114 @@
 #include "worker.h"
+#include "worker_queue.h" // Essencial para worker_queue_t e initqueue
+#include "thread_pool.h"  // Essencial para thread_pool_t e create_thread_pool
 #include "logger.h"
+#include "http.h"
 
-#include <time.h>
-#include <unistd.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <signal.h>       // Essencial para SIGINT
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <pthread.h>      // Essencial para pthread_mutex_lock
 
-#define GREY "\033[37m"
+#define RED "\033[31m"
 #define RESET "\033[0m"
 
-// Definido para suportar carga alta (ulimit -n)
-#define FD_MAP_SIZE 4096
-
-// Struct to pass arguments to our sync thread
-typedef struct {
-    int master_socket;
-    int* fd_map;
-    pthread_mutex_t* map_mutex;
-} pull_sync_args_t;
-
-int dequeue_shm(shared_memory_t * shm, semaphores_t * sems){
-    sem_wait(sems->filled_slots);
-    sem_wait(sems->queue_mutex);
-
-    //dequeue from shm
-    int fd = shm->queue.socket_fds[shm->queue.front];
-    shm->queue.front = (shm->queue.front + 1) % MAX_QUEUE_SIZE;
-    shm->queue.count--;
-
-    sem_post(sems->queue_mutex);
-    sem_post(sems->empty_slots);
-
-    return fd;
-}
-
-void * pull_recv_sync(void * arg);
-void signal_worker();
-int shutdown_signal;
+int shutdown_signal = 0;
 thread_pool_t * pool;
 
-void worker_main(shared_memory_t * shm, semaphores_t * sems, int master_socket){
+void signal_worker(int signum){
+    (void)signum; // Suppress unused warning
+    shutdown_signal = 1;
+    if(pool) destroy_thread_pool(pool);
+    exit(0);
+}
 
-    logger_init("log_acess", sems->log_mutex);
+// Função auxiliar para extrair o FD da mensagem de socket
+int recv_fd(int socket) {
+    struct msghdr msg = {0};
+    char dummy;
+    struct iovec iov = { .iov_base = &dummy, .iov_len = 1 };
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
 
-    // This map will store the translation from the master's FD to this worker's FD.
-    int fd_map[FD_MAP_SIZE];
-    for (int i = 0; i < FD_MAP_SIZE; ++i) {
-        fd_map[i] = -1; // Initialize with an invalid value.
+    char cmsg_buf[CMSG_SPACE(sizeof(int))];
+    msg.msg_control = cmsg_buf;
+    msg.msg_controllen = sizeof(cmsg_buf);
+
+    // Bloqueante: O worker só chega aqui se o semáforo disser que HÁ dados.
+    ssize_t n = recvmsg(socket, &msg, 0);
+    if (n <= 0) {
+        return -1;
     }
-    pthread_mutex_t map_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-    shutdown_signal=0;
-    signal(SIGINT, signal_worker);
+    struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+    if (cmsg != NULL && cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS) {
+        return *(int*)CMSG_DATA(cmsg);
+    }
+    return -1;
+}
 
-    // This thread's job is to receive FDs from the master.
-    pull_sync_args_t sync_args = {
-        .master_socket = master_socket,
-        .fd_map = fd_map,
-        .map_mutex = &map_mutex
-    };
-    pthread_t sync_tid;
-    pthread_create(&sync_tid, NULL, pull_recv_sync, &sync_args);
-    pthread_detach(sync_tid); // This thread can run independently in the background.
+void worker_main(shared_memory_t * shm, semaphores_t * sems, int ipc_socket){
 
-    //Local queue
+    // Inicializar logger localmente
+    logger_init(shm->conf.log_file, sems->log_mutex);
+
+    // Configurar sinal para shutdown limpo
+    struct sigaction sa;
+    sa.sa_handler = signal_worker;
+    sa.sa_flags = 0;
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGINT, &sa, NULL);
+
+    // Inicializar fila local
     worker_queue_t lq;
     initqueue(&lq);
 
+    // Criar Pool de Threads
     pool = create_thread_pool(shm->conf.thread_per_worker, &lq, shm, sems);
+    printf("Worker %d ready.\n", getpid());
 
     while (!shutdown_signal)
     {
-        // 1. Get the master's original FD number from shared memory.
-        int master_fd = dequeue_shm(shm, sems);
-        if (master_fd < 0 || master_fd >= FD_MAP_SIZE) continue; // Invalid FD received
+        // 1. SINCRONIZAÇÃO LÓGICA (Semáforo)
+        // Bloqueia até o Master garantir que pôs algo na "mesa"
+        if (sem_wait(sems->filled_slots) != 0) break;
 
-        // 2. Look up the real, usable FD in our map.
-        int local_fd = -1;
-        while (local_fd == -1 && !shutdown_signal) {
-            pthread_mutex_lock(&map_mutex);
-            local_fd = fd_map[master_fd];
-            pthread_mutex_unlock(&map_mutex);
-            if (local_fd == -1) {
-                // CORREÇÃO: Substituir usleep (obsoleto em POSIX 2008) por nanosleep
-                struct timespec req = {0, 100000}; // 0 segundos, 100.000 nanosegundos (100us)
-                nanosleep(&req, NULL);
-            }
-        }
         if (shutdown_signal) break;
 
-        // 3. Invalidate the map entry so it's not used again.
-        pthread_mutex_lock(&map_mutex);
-        fd_map[master_fd] = -1;
-        pthread_mutex_unlock(&map_mutex);
+        // Atualizar índices da fila partilhada (Gestão de pointers circulares)
+        sem_wait(sems->queue_mutex);
+        shm->queue.front = (shm->queue.front + 1) % MAX_QUEUE_SIZE;
+        shm->queue.count--;
+        sem_post(sems->queue_mutex);
 
-        // 4. Enqueue the *real* FD for the thread pool to process.
-        enqueue(&lq, local_fd);
-        // printf(GREY"DEBUG: worker.c mapped master_fd %d to local_fd %d and enqueued"RESET"\n", master_fd, local_fd);
-        pthread_cond_signal(&pool->cond);   //signal its no longer empty
-    }
-}
+        // Libertar espaço lógico para o Master (dizemos "já tirei o meu")
+        sem_post(sems->empty_slots);
 
-void * pull_recv_sync(void * arg){
-    pull_sync_args_t* args = (pull_sync_args_t*)arg;
+        // 2. LEITURA FÍSICA (Socket)
+        // Ler o descritor real do canal partilhado
+        int client_fd = recv_fd(ipc_socket);
 
-    while (!shutdown_signal)
-    {
-        struct msghdr msg = {0};
-        int master_fd_val; // This will receive the original FD number from the master.
-        struct iovec iov = {.iov_base = &master_fd_val, .iov_len = sizeof(int)};
-        msg.msg_iov = &iov;
-        msg.msg_iovlen = 1;
-
-        char cmsg_buf[CMSG_SPACE(sizeof(int))];
-        msg.msg_control = cmsg_buf;
-        msg.msg_controllen = sizeof(cmsg_buf);
-
-        if (recvmsg(args->master_socket, &msg, 0) <= 0) {
-            break; // Error or connection closed
+        if (client_fd < 0) {
+            // Se falhar aqui, é grave (dessincronização), mas não mata o worker
+            perror(RED "Worker failed to receive FD" RESET);
+            continue;
         }
 
-        struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
-        if (cmsg != NULL && cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS) {
-            int new_local_fd = *(int*)CMSG_DATA(cmsg);
-            if (master_fd_val >= 0 && master_fd_val < FD_MAP_SIZE) {
-                // Populate the map: master's FD -> new local FD
-                pthread_mutex_lock(args->map_mutex);
-                args->fd_map[master_fd_val] = new_local_fd;
-                pthread_mutex_unlock(args->map_mutex);
-            } else {
-                close(new_local_fd); // Invalid master FD
-            }
+        // 3. PROCESSAMENTO (Thread Pool)
+        pthread_mutex_lock(&pool->mutex);
+        if (!isFull(&lq)) {
+            enqueue(&lq, client_fd);
+            pthread_cond_signal(&pool->cond);
+        } else {
+            // Fila local cheia: o Worker está sobrecarregado.
+            close(client_fd);
         }
+        pthread_mutex_unlock(&pool->mutex);
     }
-    return NULL;
-}
 
-void signal_worker(){
-    shutdown_signal=1;
+    // Cleanup se sair do loop
     destroy_thread_pool(pool);
-    exit(0);
 }
