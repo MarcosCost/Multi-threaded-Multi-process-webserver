@@ -1,0 +1,23 @@
+/* Reset basic margins */
+body {
+    margin: 0;
+    padding: 0;
+    background-color: #f4f4f4; /* Light gray background */
+    font-family: Arial, sans-serif;
+    text-align: center; /* Centers everything */
+}
+
+h1 {
+    color: #333;
+    margin-top: 50px;
+}
+
+/* Style the image to verify it loads with the CSS */
+img {
+    max-width: 80%;
+    height: auto;
+    border: 5px solid white;
+    border-radius: 10px; /* Rounded corners */
+    box-shadow: 0 5px 15px rgba(0,0,0,0.3); /* Drop shadow */
+    margin-top: 20px;
+}

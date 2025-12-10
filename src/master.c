@@ -23,58 +23,54 @@ void send_fd_to_worker(int worker_socket, int fd_to_send) {
     sendmsg(worker_socket, &msg, 0);
 }
 
-void enqueue_shm(shared_memory_t * shm, semaphores_t * sems, int fd){
-
-    sem_wait(sems->empty_slots);
-    sem_wait(sems->queue_mutex);
-
-    shm->queue.socket_fds[shm->queue.rear] = fd;
-    shm->queue.rear = (shm->queue.rear + 1) % MAX_QUEUE_SIZE;
-    shm->queue.count++;
-    
-    sem_post(sems->queue_mutex);
-    sem_post(sems->filled_slots);
-
-}
-
 void master_main(int server_fd, shared_memory_t * shm, semaphores_t * sems, int (*worker_sockets)[2] , config_t * conf){
 
     while(1){
 
         int client_fd = accept(server_fd, NULL, NULL);
-        
-        //Handle queue full scenario gracefully (reject with 503 Service Unavailable)
-        if (shm->queue.count==MAX_QUEUE_SIZE)
-        {
-            //Read HTML file
-            FILE *file = fopen("www/503.html", "rb");
-            if (file == NULL)
-            {   
-                send_http_response(client_fd, 503, "Service Unavailable", "text/html","503 Service Unavailable", 24);
-            } else {
-                fseek(file, 0, SEEK_END);
-                long file_size = ftell(file);
-                fseek(file, 0, SEEK_SET);
-
-                char *html_body = malloc(file_size);
-                fread(html_body, 1, file_size, file);
-                fclose(file);
-
-                send_http_response(client_fd, 503, "Service Unavailable", "text/html", html_body, file_size);
-                close(client_fd);
-
-                free(html_body);
-                continue;
-            }
+        if (client_fd < 0) {
+            perror("accept failed in master");
+            continue;
         }
 
+        if (sem_trywait(sems->empty_slots) == -1) {
+            // This is the non-blocking way to check if the queue is full.
+            //Read HTML file
+            FILE *file = fopen("www/503.html", "rb");
+            if (file == NULL) {
+                send_http_response(client_fd, 503, "Service Unavailable", "text/html","503 Service Unavailable", 24);
+            } else {
+                if (fseek(file, 0, SEEK_END) == 0) {
+                    long file_size = ftell(file);
+                    fseek(file, 0, SEEK_SET);
+
+                    char *html_body = malloc(file_size);
+                    if (html_body) {
+                        fread(html_body, 1, file_size, file);
+                        send_http_response(client_fd, 503, "Service Unavailable", "text/html", html_body, file_size);
+                        free(html_body);
+                    } else {
+                        send_http_response(client_fd, 503, "Service Unavailable", "text/html","503 Service Unavailable", 24);
+                    }
+                }
+                fclose(file);
+            }
+            close(client_fd);
+            continue;
+        }
+        
         // Send fd to all workers
-        for (int i = 0; i < conf->num_workers; i++)
-        {
+        for (int i = 0; i < conf->num_workers; i++) {
             send_fd_to_worker(worker_sockets[i][1], client_fd);
         }
 
-        enqueue_shm(shm, sems, client_fd);
+        sem_wait(sems->queue_mutex);
+        shm->queue.socket_fds[shm->queue.rear] = client_fd;
+        shm->queue.rear = (shm->queue.rear + 1) % MAX_QUEUE_SIZE;
+        shm->queue.count++;
+        sem_post(sems->queue_mutex);
+
+        sem_post(sems->filled_slots);
         printf(GREY"DEBUG: master.c enqueued %d"RESET"\n", client_fd);
 
         close(client_fd);  // master doesn't need it anymore

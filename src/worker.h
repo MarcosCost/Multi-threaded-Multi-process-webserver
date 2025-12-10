@@ -7,6 +7,8 @@
 #include <pthread.h>
 #include <stdint.h>
 
+#include "worker_queue.h"
+#include "thread_pool.h"
 #include "shared_mem.h"
 #include "semaphores.h"
 #include "http.h"
