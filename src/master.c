@@ -1,4 +1,5 @@
 #include "master.h"
+#include "logger.h"
 
 #include "stats.h"
 
@@ -60,12 +61,14 @@ void master_main(int server_fd, shared_memory_t * shm, semaphores_t * sems, int 
                         free(html_body);
                     } else {
                         send_http_response(client_fd, 503, "Service Unavailable", "text/html","503 Service Unavailable", 24);
+
                         add_bytes_transferred(shm, sems, 24);
                     }
                 }
                 fclose(file);
             }
 
+            logger_log_request("127.0.0.1", "GET", "/503.html", 503, 24);
             add_status_code(shm, sems, 503);
             close(client_fd);
             remove_connection(shm, sems);
