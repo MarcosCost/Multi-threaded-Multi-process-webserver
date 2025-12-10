@@ -4,6 +4,8 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
+
 
 void* worker_thread(void * arg) {
     thread_pool_t* pool = (thread_pool_t*)arg;
@@ -15,9 +17,9 @@ void* worker_thread(void * arg) {
             pthread_cond_wait(&pool->cond, &pool->mutex);
         }
         
-        if (pool->shutdown) {
+        if (pool->shutdown && isEmpty(pool->worker_queue)) {
             pthread_mutex_unlock(&pool->mutex);
-            break;
+            pthread_exit(NULL);
         }
         
         // Dequeue work item and process
@@ -25,15 +27,15 @@ void* worker_thread(void * arg) {
         
         pthread_mutex_unlock(&pool->mutex);
         
-        char buff[1000];
+        char buff[4000];
         ssize_t bytes_recv =  recv(fd, buff, sizeof(buff) -1, 0);
 
         http_request_t request;
 
         int status;
         char status_message[20];
-        char mime_type[20];            
-        char body[4096];    //what we are actually sending ex: html page, text, etc...
+        char mime_type[30];            
+        char * body;  //what we are actually sending ex: html page, text, etc...
         size_t body_size;
 
         if (bytes_recv > 0){               
@@ -44,6 +46,7 @@ void* worker_thread(void * arg) {
             char path[30];
             build_full_path("www", request.path, path, 30);
             printf("request.path = %s\n built path = %s\n", request.path, path);
+            
             if (path_exists(path)){
                 status = 200;
                 strcpy(status_message, "OK");
@@ -61,6 +64,8 @@ void* worker_thread(void * arg) {
                         fseek(file, 0, SEEK_END);
                         long file_size = ftell(file);
                         fseek(file, 0, SEEK_SET);
+
+                        body = malloc(file_size);
 
                         fread(body, 1, file_size, file);
                         body_size = file_size;
@@ -81,6 +86,8 @@ void* worker_thread(void * arg) {
                         fseek(file, 0, SEEK_END);
                         long file_size = ftell(file);
                         fseek(file, 0, SEEK_SET);
+
+                        body = malloc(file_size);
 
                         fread(body, 1, file_size, file);
                         body_size = file_size;
@@ -106,6 +113,8 @@ void* worker_thread(void * arg) {
                     long file_size = ftell(file);
                     fseek(file, 0, SEEK_SET);
 
+                    body = malloc(file_size);
+
                     fread(body, 1, file_size, file);
                     body_size = file_size;
                 }
@@ -126,6 +135,8 @@ void* worker_thread(void * arg) {
         } else {
             send_http_response(fd, status, status_message, mime_type, NULL, 0);
         }
+
+        free(body);
 
         close(fd);
 
@@ -152,4 +163,20 @@ thread_pool_t* create_thread_pool(int num_threads, worker_queue_t* queue) {
 }   
 
 
-void destroy_thread_pool(thread_pool_t* pool);
+void destroy_thread_pool(thread_pool_t* pool){
+    pthread_mutex_lock(&pool->mutex);
+    pool->shutdown = 1;
+    pthread_mutex_unlock(&pool->mutex);
+    
+    pthread_cond_broadcast(&pool->cond);
+
+    for (int i = 0; i < pool->num_threads; i++) {
+        pthread_join(pool->threads[i], NULL);
+        printf("Thread %d joined\n", i);
+    }
+
+    free(pool->threads);
+    pthread_mutex_destroy(&pool->mutex);
+    pthread_cond_destroy(&pool->cond);   
+    free(pool);
+}

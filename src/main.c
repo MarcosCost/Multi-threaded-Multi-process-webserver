@@ -3,6 +3,7 @@
 #include "semaphores.h"
 #include "master.h"
 #include "worker.h"
+#include "stats.h"
 
 #include <signal.h>
 #include <sys/socket.h>
@@ -18,6 +19,9 @@ config_t conf;
 shared_memory_t * shm;
 semaphores_t sems;
 pid_t * pids;
+
+server_stats_t stats;
+pthread_t stats_thread;
 
 void signal_handler(int);
 int create_server_socket(int port);
@@ -64,13 +68,27 @@ int main(void){
     }
     
 
-int worker_sockets[conf.num_workers][2];  // [read_end, write_end]
-for (int i = 0; i < conf.num_workers; i++) {
-    if (socketpair(AF_UNIX, SOCK_STREAM, 0, worker_sockets[i]) == -1) {
-        perror("socketpair");
-        return -1;
+    //stat thread
+    stats.active_connections = 0;
+    stats.total_requests = 0;
+    stats.bytes_transferred = 0;
+    stats.start_time = time(NULL);
+    for (int i = 0; i < 600; i++) {
+        stats.status_counts[i] = 0;
     }
-}
+
+    pthread_create(&stats_thread, NULL, start_stats, &stats);
+
+
+
+
+    int worker_sockets[conf.num_workers][2];  // [read_end, write_end]
+    for (int i = 0; i < conf.num_workers; i++) {
+        if (socketpair(AF_UNIX, SOCK_STREAM, 0, worker_sockets[i]) == -1) {
+            perror("socketpair");
+            return -1;
+        }
+    }
 
     //////////////////
     // Fork Workers //
@@ -125,6 +143,9 @@ void signal_handler(int signum){
     printf("  Done\n");
 
     free(pids);
+
+    pthread_cancel(stats_thread);
+    pthread_join(stats_thread, NULL);
 
     exit(0);
 }
