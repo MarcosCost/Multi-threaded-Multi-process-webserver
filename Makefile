@@ -1,6 +1,6 @@
 # Compiler and flags
 CC = gcc
-CFLAGS = -Wall -Wextra -std=c99 -pedantic -pthread -Isrc
+CFLAGS = -Wall -Wextra -std=c99 -pedantic -pthread -Isrc -D_XOPEN_SOURCE=700
 LDFLAGS = -pthread
 DEBUG_FLAGS = -g -DDEBUG
 RELEASE_FLAGS = -O2

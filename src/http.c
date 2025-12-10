@@ -1,9 +1,13 @@
 #include "http.h"
-
 #include "logger.h"
 
+// CORREÇÃO: Faltavam estes includes
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+
 //
-//HTTP Response Builder
+// HTTP Response Builder
 ///////////////////////
 void send_http_response(int fd, int status, const char* status_msg, const char* content_type, const char* body, size_t body_len) {
     char header[2048];
@@ -17,40 +21,45 @@ void send_http_response(int fd, int status, const char* status_msg, const char* 
         status, status_msg, content_type, body_len);
 
     send(fd, header, header_len, 0);
-    
+
     if (body && body_len > 0) {
         send(fd, body, body_len, 0);
     }
-
 }
 
 //
-//HTTP Request Parser
+// HTTP Request Parser
 ///////////////////////
 int parse_http_request(const char* buffer, http_request_t* req) {
-    
+
     char* line_end = strstr(buffer, "\r\n");
-    
+
     if (!line_end) return -1;
-    
+
     char first_line[1024];
     size_t len = line_end - buffer;
+
+    // Proteção contra buffer overflow
+    if (len >= sizeof(first_line)) len = sizeof(first_line) - 1;
+
     strncpy(first_line, buffer, len);
     first_line[len] = '\0';
-    
+
     if (sscanf(first_line, "%s %s %s", req->method, req->path, req->version) != 3) return -1;
-    
+
     return 0;
 }
 
 //
-//Build Path
+// Build Path
 ///////////////////////
 int build_full_path(const char* root, const char* path, char* output, size_t output_size) {
     if (!root || !path || !output) return -1;
-    
+
     int written = snprintf(output, output_size, "%s%s", root, path);
-    return (written >= 0 && written < output_size) ? 0 : -1;
+
+    // CORREÇÃO: Cast para size_t para evitar warning de comparação
+    return (written >= 0 && (size_t)written < output_size) ? 0 : -1;
 }
 
 int path_exists(const char* path) {
@@ -70,7 +79,7 @@ char * get_mimetype(const char * filename) {
         return "application/octet-stream";
     }
 
-    // Compare the extension (you can add more here)
+    // Compare the extension
     if (strcmp(dot, ".html") == 0) return "text/html";
     if (strcmp(dot, ".css")  == 0) return "text/css";
     if (strcmp(dot, ".js")   == 0) return "application/javascript";
@@ -80,6 +89,10 @@ char * get_mimetype(const char * filename) {
     if (strcmp(dot, ".gif")  == 0) return "image/gif";
     if (strcmp(dot, ".json") == 0) return "application/json";
     if (strcmp(dot, ".txt")  == 0) return "text/plain";
+
+    // CORREÇÃO: Adicionado suporte a PDF e Ícone (para favicon)
+    if (strcmp(dot, ".pdf")  == 0) return "application/pdf";
+    if (strcmp(dot, ".ico")  == 0) return "image/x-icon";
 
     // Default if the extension is unknown
     return "application/octet-stream";

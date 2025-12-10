@@ -6,6 +6,7 @@
 #include "worker_queue.h"
 #include "shared_mem.h"
 #include "semaphores.h"
+#include "cache.h"
 
 typedef struct {
     pthread_t* threads;
@@ -16,7 +17,8 @@ typedef struct {
 
     worker_queue_t* worker_queue;
     shared_memory_t * shm;
-    semaphores_t * sems;   
+    semaphores_t * sems;
+    cache_t * cache;
 
 } thread_pool_t;
 

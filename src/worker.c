@@ -1,13 +1,15 @@
 #include "worker.h"
-
 #include "logger.h"
+
+#include <time.h>
+#include <unistd.h>
+#include <stdio.h>
 
 #define GREY "\033[37m"
 #define RESET "\033[0m"
 
-// A map to translate master FDs to local FDs.
-// We assume file descriptors won't exceed this value.
-#define FD_MAP_SIZE 1024
+// Definido para suportar carga alta (ulimit -n)
+#define FD_MAP_SIZE 4096
 
 // Struct to pass arguments to our sync thread
 typedef struct {
@@ -16,11 +18,7 @@ typedef struct {
     pthread_mutex_t* map_mutex;
 } pull_sync_args_t;
 
-// The recv_fd_from_master function is no longer needed,
-// as its logic is now inside pull_recv_sync.
-
 int dequeue_shm(shared_memory_t * shm, semaphores_t * sems){
-
     sem_wait(sems->filled_slots);
     sem_wait(sems->queue_mutex);
 
@@ -33,7 +31,6 @@ int dequeue_shm(shared_memory_t * shm, semaphores_t * sems){
     sem_post(sems->empty_slots);
 
     return fd;
-
 }
 
 void * pull_recv_sync(void * arg);
@@ -70,7 +67,6 @@ void worker_main(shared_memory_t * shm, semaphores_t * sems, int master_socket){
     initqueue(&lq);
 
     pool = create_thread_pool(shm->conf.thread_per_worker, &lq, shm, sems);
-    
 
     while (!shutdown_signal)
     {
@@ -79,15 +75,15 @@ void worker_main(shared_memory_t * shm, semaphores_t * sems, int master_socket){
         if (master_fd < 0 || master_fd >= FD_MAP_SIZE) continue; // Invalid FD received
 
         // 2. Look up the real, usable FD in our map.
-        // The map is populated by the pull_recv_sync thread.
         int local_fd = -1;
         while (local_fd == -1 && !shutdown_signal) {
             pthread_mutex_lock(&map_mutex);
             local_fd = fd_map[master_fd];
             pthread_mutex_unlock(&map_mutex);
             if (local_fd == -1) {
-                // The sync thread might not have received the FD yet. Wait briefly.
-                usleep(100);
+                // CORREÇÃO: Substituir usleep (obsoleto em POSIX 2008) por nanosleep
+                struct timespec req = {0, 100000}; // 0 segundos, 100.000 nanosegundos (100us)
+                nanosleep(&req, NULL);
             }
         }
         if (shutdown_signal) break;
@@ -99,10 +95,9 @@ void worker_main(shared_memory_t * shm, semaphores_t * sems, int master_socket){
 
         // 4. Enqueue the *real* FD for the thread pool to process.
         enqueue(&lq, local_fd);
-        printf(GREY"DEBUG: worker.c mapped master_fd %d to local_fd %d and enqueued"RESET"\n", master_fd, local_fd);
+        // printf(GREY"DEBUG: worker.c mapped master_fd %d to local_fd %d and enqueued"RESET"\n", master_fd, local_fd);
         pthread_cond_signal(&pool->cond);   //signal its no longer empty
     }
-
 }
 
 void * pull_recv_sync(void * arg){
@@ -133,7 +128,7 @@ void * pull_recv_sync(void * arg){
                 args->fd_map[master_fd_val] = new_local_fd;
                 pthread_mutex_unlock(args->map_mutex);
             } else {
-                close(new_local_fd); // Invalid master FD, close the handle to prevent leaks
+                close(new_local_fd); // Invalid master FD
             }
         }
     }
@@ -142,8 +137,6 @@ void * pull_recv_sync(void * arg){
 
 void signal_worker(){
     shutdown_signal=1;
-
     destroy_thread_pool(pool);
-
     exit(0);
 }
