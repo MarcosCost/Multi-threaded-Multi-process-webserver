@@ -159,7 +159,7 @@ thread_pool_t* create_thread_pool(int num_threads, worker_queue_t* queue, shared
     pool->shutdown = 0;
     pool->worker_queue = queue;
     pool->shm = shm;
-    pool->sems = sems;
+    pool->sems = sems; 
     
     pthread_mutex_init(&pool->mutex, NULL);
     pthread_cond_init(&pool->cond, NULL);
