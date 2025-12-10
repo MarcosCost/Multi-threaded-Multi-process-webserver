@@ -1,5 +1,7 @@
 #include "worker.h"
 
+#include "logger.h"
+
 #define GREY "\033[37m"
 #define RESET "\033[0m"
 
@@ -40,6 +42,8 @@ int shutdown_signal;
 thread_pool_t * pool;
 
 void worker_main(shared_memory_t * shm, semaphores_t * sems, int master_socket){
+
+    logger_init("log_acess", sems->log_mutex);
 
     // This map will store the translation from the master's FD to this worker's FD.
     int fd_map[FD_MAP_SIZE];
