@@ -37,7 +37,7 @@ int dequeue_shm(shared_memory_t * shm, semaphores_t * sems){
 void * pull_recv_sync(void * arg);
 void signal_worker();
 int shutdown_signal;
-thread_pool_t* pool;
+thread_pool_t * pool;
 
 void worker_main(shared_memory_t * shm, semaphores_t * sems, int master_socket){
 
@@ -65,7 +65,7 @@ void worker_main(shared_memory_t * shm, semaphores_t * sems, int master_socket){
     worker_queue_t lq;
     initqueue(&lq);
 
-    pool = create_thread_pool(shm->conf.thread_per_worker, &lq);
+    pool = create_thread_pool(shm->conf.thread_per_worker, &lq, shm, sems);
     
 
     while (!shutdown_signal)
@@ -139,7 +139,7 @@ void * pull_recv_sync(void * arg){
 void signal_worker(){
     shutdown_signal=1;
 
-    destroy_thread_pool(&pool);
+    destroy_thread_pool(pool);
 
     exit(0);
 }

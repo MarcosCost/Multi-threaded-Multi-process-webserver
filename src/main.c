@@ -20,7 +20,6 @@ shared_memory_t * shm;
 semaphores_t sems;
 pid_t * pids;
 
-server_stats_t stats;
 pthread_t stats_thread;
 
 void signal_handler(int);
@@ -68,16 +67,15 @@ int main(void){
     }
     
 
-    //stat thread
-    stats.active_connections = 0;
-    stats.total_requests = 0;
-    stats.bytes_transferred = 0;
-    stats.start_time = time(NULL);
-    for (int i = 0; i < 600; i++) {
-        stats.status_counts[i] = 0;
-    }
+    //stats display thread
+    shm->stats.active_connections = 0;
+    shm->stats.total_requests = 0;
+    shm->stats.bytes_transferred = 0;
+    shm->stats.status_200 = 0;
+    shm->stats.status_404 = 0;
+    shm->stats.status_500 = 0;
 
-    pthread_create(&stats_thread, NULL, start_stats, &stats);
+    pthread_create(&stats_thread, NULL, start_stats, shm);
 
 
 

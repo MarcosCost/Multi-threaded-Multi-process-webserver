@@ -1,5 +1,7 @@
 #include "master.h"
 
+#include "stats.h"
+
 #define GREY "\033[37m"
 #define RESET "\033[0m"
 
@@ -11,6 +13,7 @@ void send_fd_to_worker(int worker_socket, int fd_to_send) {
 
     // Ancillary data for the fd
     char cmsg_buf[CMSG_SPACE(sizeof(int))];
+    memset(cmsg_buf, 0, sizeof(cmsg_buf));
     msg.msg_control = cmsg_buf;
     msg.msg_controllen = CMSG_SPACE(sizeof(int));
 
@@ -33,8 +36,13 @@ void master_main(int server_fd, shared_memory_t * shm, semaphores_t * sems, int 
             continue;
         }
 
+        add_connection(shm, sems);
+        add_request_total(shm, sems);
+        
+
         if (sem_trywait(sems->empty_slots) == -1) {
             // This is the non-blocking way to check if the queue is full.
+
             //Read HTML file
             FILE *file = fopen("www/503.html", "rb");
             if (file == NULL) {
@@ -48,14 +56,19 @@ void master_main(int server_fd, shared_memory_t * shm, semaphores_t * sems, int 
                     if (html_body) {
                         fread(html_body, 1, file_size, file);
                         send_http_response(client_fd, 503, "Service Unavailable", "text/html", html_body, file_size);
+                        add_bytes_transferred(shm, sems, file_size);
                         free(html_body);
                     } else {
                         send_http_response(client_fd, 503, "Service Unavailable", "text/html","503 Service Unavailable", 24);
+                        add_bytes_transferred(shm, sems, 24);
                     }
                 }
                 fclose(file);
             }
+
+            add_status_code(shm, sems, 503);
             close(client_fd);
+            remove_connection(shm, sems);
             continue;
         }
         

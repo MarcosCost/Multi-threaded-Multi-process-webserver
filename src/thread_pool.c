@@ -1,6 +1,7 @@
 // thread_pool.c
 #include "thread_pool.h"
 #include "http.h"
+#include "stats.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -132,25 +133,33 @@ void* worker_thread(void * arg) {
         if (strcmp(request.method,"GET") == 0)
         {
             send_http_response(fd, status, status_message, mime_type, body, body_size);
+            add_bytes_transferred(pool->shm, pool->sems, body_size);
         } else {
             send_http_response(fd, status, status_message, mime_type, NULL, 0);
+            add_bytes_transferred(pool->shm, pool->sems, 0);
         }
+        add_status_code(pool->shm, pool->sems, status);
 
         free(body);
 
+
         close(fd);
+        remove_connection(pool->shm, pool->sems);
+        
 
     }
     
     return NULL;
 }
 
-thread_pool_t* create_thread_pool(int num_threads, worker_queue_t* queue) {
+thread_pool_t* create_thread_pool(int num_threads, worker_queue_t* queue, shared_memory_t * shm, semaphores_t * sems) {
     thread_pool_t* pool = malloc(sizeof(thread_pool_t));    
     pool->threads = malloc(sizeof(pthread_t) * num_threads);
     pool->num_threads = num_threads;
     pool->shutdown = 0;
-    pool->worker_queue = queue; // Link the queue before creating threads
+    pool->worker_queue = queue;
+    pool->shm = shm;
+    pool->sems = sems;
     
     pthread_mutex_init(&pool->mutex, NULL);
     pthread_cond_init(&pool->cond, NULL);

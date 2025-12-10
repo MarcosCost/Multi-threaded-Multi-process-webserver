@@ -3,7 +3,9 @@
 #define THREAD_POOL_H
 
 #include <pthread.h>
-#include <worker_queue.h>
+#include "worker_queue.h"
+#include "shared_mem.h"
+#include "semaphores.h"
 
 typedef struct {
     pthread_t* threads;
@@ -13,12 +15,13 @@ typedef struct {
     int shutdown;
 
     worker_queue_t* worker_queue;
+    shared_memory_t * shm;
+    semaphores_t * sems;   
+
 } thread_pool_t;
 
 
-
-
-thread_pool_t* create_thread_pool(int num_threads, worker_queue_t* queue);
+thread_pool_t* create_thread_pool(int num_threads, worker_queue_t* queue, shared_memory_t * shm, semaphores_t * sems);
 
 void destroy_thread_pool(thread_pool_t* pool);
 
