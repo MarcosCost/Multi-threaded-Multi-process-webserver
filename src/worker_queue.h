@@ -7,7 +7,7 @@
 #ifndef LQ_H
 #define LQ_H
 
-#define MAX_LOCAL_SIZE 20
+#define MAX_LOCAL_SIZE 200
 
 #include <stdio.h>
 

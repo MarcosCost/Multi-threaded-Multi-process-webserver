@@ -1,4 +1,3 @@
-
 #ifndef MASTER_H
 #define MASTER_H
 
@@ -13,8 +12,10 @@
 #include "http.h"
 #include "config.h"
 
-void send_fd_to_worker(int worker_socket, int fd_to_send);
+// Função auxiliar para enviar FD (usada internamente, mas pode estar aqui)
+int send_fd(int socket, int fd_to_send);
 
-void master_main(int server_fd, shared_memory_t * shm, semaphores_t * sems, int (*worker_sockets)[2] , config_t * conf);
+// CORREÇÃO: Recebe apenas um 'int ipc_socket' em vez do array 'worker_sockets'
+void master_main(int server_fd, shared_memory_t * shm, semaphores_t * sems, int ipc_socket, config_t * conf);
 
 #endif
