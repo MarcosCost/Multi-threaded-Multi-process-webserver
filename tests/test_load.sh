@@ -1,66 +1,66 @@
 #!/bin/bash
-# tests/test_load.sh
+# test_load.sh - Carga e Durabilidade (Req 13, 14, 21, 22)
 
-# Cores para output
-GREEN='\033[0;32m'
-RED='\033[0;31m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+SERVER_URL_SMALL="http://localhost:8080/index.html"
+SERVER_URL_LARGE="http://localhost:8080/large_file.bin"
+DOCUMENT_ROOT="www/"
+LOG_FILE_LOAD="test_load_ab.log"
+LOG_FILE_DURATION="test_duration_5min.log"
 
-SERVER_URL="http://localhost:8080/index.html"
+REQUESTS=10000
+CONCURRENCY=100
+DURATION=300
 
-echo -e "${YELLOW}=== INICIANDO TESTES DE CARGA DO WEBSERVER ===${NC}"
-echo "Certifica-te que o servidor está a correr (./server) noutro terminal!"
-echo "A aguardar 2 segundos..."
-sleep 2
+run_ab_test() {
+    local n_requests="$1"
+    local concurrency="$2"
+    local duration="$3"
+    local target_url="$4"
+    local log_file="$5"
 
-# Função para executar teste
-run_test() {
-    local requests=$1
-    local concurrency=$2
-    local label=$3
-
-    echo -e "\n${YELLOW}--- TESTE: $label ($requests pedidos, $concurrency concorrentes) ---${NC}"
-
-    # Executa o Apache Bench
-    # -n: Total pedidos
-    # -c: Concorrência
-    # -k: Keep-Alive (opcional, o nosso servidor suporta se implementado, senão ignora)
-    # -r: Não sair em erro de socket (importante para stress tests)
-    ab -n $requests -c $concurrency -r $SERVER_URL > ab_temp.log 2>&1
-
-    # Analisa resultados
-    if grep -q "Complete requests:" ab_temp.log; then
-        local complete=$(grep "Complete requests:" ab_temp.log | awk '{print $3}')
-        local failed=$(grep "Failed requests:" ab_temp.log | awk '{print $3}')
-        local rps=$(grep "Requests per second:" ab_temp.log | awk '{print $4}')
-
-        echo -e "Status: ${GREEN}SUCESSO${NC}"
-        echo "  - Pedidos Completos: $complete"
-        echo "  - Falhas: $failed"
-        echo "  - Requests/segundo: $rps"
-
-        if [ "$failed" -gt 0 ]; then
-            echo -e "${RED}  AVISO: Houve pedidos falhados! (Verifica logs: Queue cheia?)${NC}"
-        fi
+    local AB_CMD="ab -q -c $concurrency " # Adicionado -q (quiet)
+    if [ "$duration" -gt 0 ]; then
+        AB_CMD+="-t $duration "
     else
-        echo -e "Status: ${RED}ERRO CRÍTICO (O servidor caiu?)${NC}"
-        cat ab_temp.log
+        AB_CMD+="-n $n_requests "
     fi
-    rm ab_temp.log
+
+    echo "Running AB test: $AB_CMD $target_url"
+    $AB_CMD $target_url | tee $log_file
 }
 
-# 1. Aquecimento (Warm-up)
-run_test 100 1 "Aquecimento (Cache Population)"
+check_summary() {
+    local log_file="$1"
+    local test_name="$2"
 
-# 2. Carga Leve
-run_test 1000 10 "Carga Leve (10 threads)"
+    DROPPED_CONNECTIONS=$(grep "Non-OK responses:" $log_file | awk '{print $3}')
+    TOTAL_REQUESTS=$(grep "Complete requests:" $log_file | awk '{print $3}')
+    TIME_TAKEN=$(grep "Time taken for tests:" $log_file | awk '{print $5}')
 
-# 3. Carga Média
-run_test 5000 50 "Carga Média (50 threads)"
+    echo "--- $test_name SUMMARY ---"
+    echo "Time: $TIME_TAKEN s | Requests: $TOTAL_REQUESTS"
 
-# 4. Teste de Stress (Requisito do Projeto: 10.000 pedidos)
-# Nota: Se o MAX_QUEUE_SIZE for 100, concorrência de 100 pode gerar 503s. É esperado.
-run_test 10000 100 "STRESS TEST (100 threads)"
+    if [ -z "$DROPPED_CONNECTIONS" ] || [ "$DROPPED_CONNECTIONS" -eq 0 ]; then
+        return 0
+    else
+        echo "[FAIL] Non-OK responses: $DROPPED_CONNECTIONS"
+        return 1
+    fi
+}
 
-echo -e "\n${YELLOW}=== FIM DOS TESTES ===${NC}"
+if [ ! -f $DOCUMENT_ROOT/large_file.bin ]; then
+    echo "Creating large_file.bin..."
+    head -c 1500K /dev/urandom > $DOCUMENT_ROOT/large_file.bin
+fi
+
+# Teste 1: Carga (10k requests)
+run_ab_test $REQUESTS $CONCURRENCY 0 $SERVER_URL_SMALL $LOG_FILE_LOAD
+RESULT1=$?
+check_summary $LOG_FILE_LOAD "Load Test"
+
+# Teste 2: Durabilidade (5 min / I/O Bound)
+run_ab_test 0 $CONCURRENCY $DURATION $SERVER_URL_LARGE $LOG_FILE_DURATION
+RESULT2=$?
+check_summary $LOG_FILE_DURATION "Durability Test"
+
+exit $((RESULT1 + RESULT2))

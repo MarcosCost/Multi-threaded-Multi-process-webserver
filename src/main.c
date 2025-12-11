@@ -31,48 +31,44 @@ int create_server_socket(int port);
 
 int main(void){
 
-    printf(PURPLE"\n=== WEB SERVER STARTING (Shared Socket Architecture) ==="RESET"\n\n");
+    printf(PURPLE"\n=== SERVIDOR WEB A INICIAR (Arquitetura Shared Socket) ==="RESET"\n\n");
 
-    ///////////////////////////////////////////////
-    // Common Resources and signal handler Setup //
-    ///////////////////////////////////////////////
-
+    // Configuração de Recursos Comuns e Signal Handler
     if (initConfig(&conf) == -1)
     {
-        printf( RED "Error loading configurations"RESET"\n");
+        printf(RED "Erro ao carregar configurações"RESET"\n");
         return -1;
     }
-    printf(GREEN"Configurations loaded sucessfully"RESET"\n");
+    printf(GREEN"Configurações carregadas com sucesso"RESET"\n");
 
     shm = create_shared_memory();
     if (shm == NULL)
     {
-        printf(RED"Error setting up shared memory"RESET"\n");
+        printf(RED"Erro ao configurar memória partilhada"RESET"\n");
         return -1;
     }
-    printf(GREEN"Shared Memory setup sucessfully"RESET"\n");
+    printf(GREEN"Memória Partilhada configurada com sucesso"RESET"\n");
 
     if (initialize_semaphores(&sems, MAX_QUEUE_SIZE) == -1)
     {
-        printf(RED"Error initializing semaphores"RESET"\n");
+        printf(RED"Erro ao inicializar semáforos"RESET"\n");
         return -1;
     }
-    printf(GREEN"Semaphores initialized sucessfully"RESET"\n");
+    printf(GREEN"Semáforos inicializados com sucesso"RESET"\n");
 
-    // Copy config to shared memory so workers can access document_root
+    // Copiar config para memória partilhada para acesso dos workers
     shm->conf = conf;
 
-    //Setup signal handler
     signal(SIGINT, signal_handler);
 
     int server_socket = create_server_socket(conf.port);
     if (server_socket < 0)
     {
-        printf(RED"Error creating server socket"RESET"\n");
+        printf(RED"Erro ao criar socket do servidor"RESET"\n");
         return -1;
     }
 
-    //stats display thread initialization
+    // Inicialização de estatísticas
     shm->stats.active_connections = 0;
     shm->stats.total_requests = 0;
     shm->stats.bytes_transferred = 0;
@@ -82,8 +78,7 @@ int main(void){
 
     pthread_create(&stats_thread, NULL, start_stats, shm);
 
-    // --- CORREÇÃO DEADLOCK: Socket Pair Único e Partilhado ---
-    // Em vez de N canais, usamos um canal partilhado.
+    // Socket Pair Único e Partilhado (IPC)
     // [0] Leitura (Workers), [1] Escrita (Master)
     int ipc_socket[2];
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, ipc_socket) == -1) {
@@ -91,15 +86,12 @@ int main(void){
         return -1;
     }
 
-    // Aumentar buffer para 512KB para aguentar picos de carga (opcional mas recomendado)
+    // Aumentar buffer para 512KB para aguentar picos
     int buff_size = 512 * 1024;
     setsockopt(ipc_socket[1], SOL_SOCKET, SO_SNDBUF, &buff_size, sizeof(buff_size));
     setsockopt(ipc_socket[0], SOL_SOCKET, SO_RCVBUF, &buff_size, sizeof(buff_size));
 
-    //////////////////
-    // Fork Workers //
-    //////////////////
-
+    // Fork dos Workers
     pids = malloc(conf.num_workers * sizeof(pid_t));
 
     for (int i = 0; i < conf.num_workers; i++)
@@ -108,15 +100,13 @@ int main(void){
 
         if (pid == 0)
         {
-            // --- WORKER PROCESS ---
+            // --- PROCESSO WORKER ---
             close(server_socket);
+            close(ipc_socket[1]); // Fecha escrita
 
-            // O Worker apenas LÊ do socket partilhado
-            close(ipc_socket[1]);
+            printf("A inicializar worker %d\n", i);
 
-            printf("Initializing worker %d\n", i);
-
-            // Passamos o socket de leitura partilhado
+            // Passa o socket de leitura partilhado
             worker_main(shm, &sems, ipc_socket[0]);
 
             free(pids);
@@ -124,19 +114,18 @@ int main(void){
         }
         else if (pid > 0)
         {
-            // --- MASTER PROCESS ---
+            // --- PROCESSO MASTER ---
             pids[i] = pid;
         }
         else
         {
-            perror("Fork failed");
+            perror("Fork falhou");
             exit(1);
         }
     }
 
-    // --- MASTER MAIN LOOP ---
-    // O Master apenas ESCREVE no socket partilhado
-    close(ipc_socket[0]);
+    // --- LOOP PRINCIPAL DO MASTER ---
+    close(ipc_socket[0]); // Fecha leitura
     master_main(server_socket, shm, &sems, ipc_socket[1], &conf);
 
     return 0;
@@ -145,9 +134,9 @@ int main(void){
 void signal_handler(int signum){
 
     printf("\r  ");
-    printf(PURPLE"\n=== SHUTTING DOWN SERVER on signal"RED" %d "PURPLE"==="RESET"\n", signum);
+    printf(PURPLE"\n=== A ENCERRAR O SERVIDOR sinal"RED" %d "PURPLE"==="RESET"\n", signum);
 
-    printf("  Terminating worker processes...\n");
+    printf("  A terminar processos worker...\n");
     if (pids != NULL) {
         for (int i = 0; i < conf.num_workers; i++) {
             if (pids[i] > 0) {
@@ -158,15 +147,15 @@ void signal_handler(int signum){
         while(wait(NULL) > 0);
         free(pids);
     }
-    printf("  Workers terminated.\n");
+    printf("  Workers terminados.\n");
 
-    printf("  Destroying shared memory:\n");
+    printf("  A destruir memória partilhada:\n");
     destroy_shared_memory(shm);
-    printf("  Done\n");
+    printf("  Feito\n");
 
-    printf("  Destroying Semaphores:\n");
+    printf("  A destruir Semáforos:\n");
     destroy_semaphores(&sems);
-    printf("  Done\n");
+    printf("  Feito\n");
 
     pthread_cancel(stats_thread);
     pthread_join(stats_thread, NULL);
@@ -187,13 +176,13 @@ int create_server_socket(int port) {
     addr.sin_port = htons(port);
 
     if (bind(sockfd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-        perror("Bind failed");
+        perror("Bind falhou");
         close(sockfd);
         return -1;
     }
 
-    if (listen(sockfd, 1024) < 0) { // Aumentado backlog
-        perror("Listen failed");
+    if (listen(sockfd, 1024) < 0) {
+        perror("Listen falhou");
         close(sockfd);
         return -1;
     }

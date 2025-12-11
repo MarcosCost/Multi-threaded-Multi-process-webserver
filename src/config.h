@@ -1,13 +1,7 @@
-/// Config - A simple ADT to Parse and store server.config values
-///
-/// Marcos Costa 125882
-/// José Mendes  114429
-/// 2025
-
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include <stddef.h> 
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -27,14 +21,13 @@ typedef struct {
     int timeout;
 } config_t ;
 
-//Reads configurations from file into the object
-//Returns -1 on error
+// Lê as configurações do ficheiro para o objeto
 int readConfigs(config_t * conf);
-//Allocates memory and loads the configurations into the object
-//Returns -1 on error, 1 on sucess
+
+// Reinicia a memória e carrega as configurações. Retorna -1 em caso de erro.
 int initConfig(config_t * conf);
 
-//Print configs
+// Imprime as configurações
 void configPrint(config_t * conf);
 
 #endif

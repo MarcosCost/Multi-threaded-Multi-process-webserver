@@ -1,16 +1,16 @@
 #include "worker.h"
-#include "worker_queue.h" // Essencial para worker_queue_t e initqueue
-#include "thread_pool.h"  // Essencial para thread_pool_t e create_thread_pool
+#include "worker_queue.h"
+#include "thread_pool.h"
 #include "logger.h"
 #include "http.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <signal.h>       // Essencial para SIGINT
+#include <signal.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-#include <pthread.h>      // Essencial para pthread_mutex_lock
+#include <pthread.h>
 
 #define RED "\033[31m"
 #define RESET "\033[0m"
@@ -19,13 +19,13 @@ int shutdown_signal = 0;
 thread_pool_t * pool;
 
 void signal_worker(int signum){
-    (void)signum; // Suppress unused warning
+    (void)signum; // Suprimir aviso de não utilizado
     shutdown_signal = 1;
     if(pool) destroy_thread_pool(pool);
     exit(0);
 }
 
-// Função auxiliar para extrair o FD da mensagem de socket
+// Recebe um descritor de ficheiro (FD) através do socket (bloqueante)
 int recv_fd(int socket) {
     struct msghdr msg = {0};
     char dummy;
@@ -37,7 +37,6 @@ int recv_fd(int socket) {
     msg.msg_control = cmsg_buf;
     msg.msg_controllen = sizeof(cmsg_buf);
 
-    // Bloqueante: O worker só chega aqui se o semáforo disser que HÁ dados.
     ssize_t n = recvmsg(socket, &msg, 0);
     if (n <= 0) {
         return -1;
@@ -72,43 +71,33 @@ void worker_main(shared_memory_t * shm, semaphores_t * sems, int ipc_socket){
 
     while (!shutdown_signal)
     {
-        // 1. SINCRONIZAÇÃO LÓGICA (Semáforo)
-        // Bloqueia até o Master garantir que pôs algo na "mesa"
+        // 1. Sincronização Lógica (Semáforo)
         if (sem_wait(sems->filled_slots) != 0) break;
 
         if (shutdown_signal) break;
 
-        // Atualizar índices da fila partilhada (Gestão de pointers circulares)
-        sem_wait(sems->queue_mutex);
-        shm->queue.front = (shm->queue.front + 1) % MAX_QUEUE_SIZE;
-        shm->queue.count--;
-        sem_post(sems->queue_mutex);
-
-        // Libertar espaço lógico para o Master (dizemos "já tirei o meu")
+        // Libertar espaço lógico para o Master
         sem_post(sems->empty_slots);
 
-        // 2. LEITURA FÍSICA (Socket)
-        // Ler o descritor real do canal partilhado
+        // 2. Leitura Física (Socket)
         int client_fd = recv_fd(ipc_socket);
 
         if (client_fd < 0) {
-            // Se falhar aqui, é grave (dessincronização), mas não mata o worker
-            perror(RED "Worker failed to receive FD" RESET);
+            perror(RED "Worker falhou a receber FD" RESET);
             continue;
         }
 
-        // 3. PROCESSAMENTO (Thread Pool)
+        // 3. Processamento (Thread Pool)
         pthread_mutex_lock(&pool->mutex);
         if (!isFull(&lq)) {
             enqueue(&lq, client_fd);
             pthread_cond_signal(&pool->cond);
         } else {
-            // Fila local cheia: o Worker está sobrecarregado.
+            // Se a fila local estiver cheia, descarta a conexão
             close(client_fd);
         }
         pthread_mutex_unlock(&pool->mutex);
     }
 
-    // Cleanup se sair do loop
     destroy_thread_pool(pool);
 }
