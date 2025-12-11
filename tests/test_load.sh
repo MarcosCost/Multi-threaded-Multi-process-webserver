@@ -19,8 +19,10 @@ run_ab_test() {
     local log_file="$5"
 
     local AB_CMD="ab -q -c $concurrency " # Adicionado -q (quiet)
+
     if [ "$duration" -gt 0 ]; then
-        AB_CMD+="-t $duration "
+        # Como o servidor não consegue processar 50M em 5 min, o teste vai correr até o tempo (-t) acabar.
+        AB_CMD+="-t $duration -n 50000000 "
     else
         AB_CMD+="-n $n_requests "
     fi
@@ -59,7 +61,8 @@ RESULT1=$?
 check_summary $LOG_FILE_LOAD "Load Test"
 
 # Teste 2: Durabilidade (5 min / I/O Bound)
-run_ab_test 0 $CONCURRENCY $DURATION $SERVER_URL_LARGE $LOG_FILE_DURATION
+echo "--- Starting 5-Minute Extreme Durability Test ---"
+run_ab_test 0 200 $DURATION $SERVER_URL_LARGE $LOG_FILE_DURATION
 RESULT2=$?
 check_summary $LOG_FILE_DURATION "Durability Test"
 
