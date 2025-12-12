@@ -236,6 +236,9 @@ Implemented using a **Hash Table** (djb2 algorithm) for fast lookups and a **Dou
 * **[Quora: Passing file descriptors between processes](https://www.quora.com/How-can-you-pass-file-descriptors-between-processes-in-Unix)** - *Utilizado para compreender o conceito teórico de transferência de sockets em sistemas UNIX.*
 * **[djb2 Hash Function](http://www.cse.yorku.ca/~oz/hash.html)** - *Algoritmo utilizado na implementação da Hash Table da Cache LRU.*
 
+### AI Assistance
+* **Generative AI Tools** - *Utilizadas como ferramenta de apoio para debugging, correção de erros de sintaxe e revisão de documentação.*
+
 ### Course Information
 
 * **Course:** Sistemas Operativos (40381-SO)
