@@ -4,12 +4,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <unistd.h> // Para rename() se necessário
+#include <unistd.h>
 
 #define MAX_LOG_SIZE (10 * 1024 * 1024) // 10 MB
 
 static FILE *log_file = NULL;
-static sem_t *shared_sem = NULL; // Pointer to the external semaphore
+static sem_t *shared_sem = NULL; // Ponteiro para o semáforo externo
 static char *current_filename = NULL;
 
 int logger_init(const char *filename, sem_t *log_sem){
@@ -18,13 +18,12 @@ int logger_init(const char *filename, sem_t *log_sem){
 
     shared_sem = log_sem;
 
-    // strdup requer <string.h> e _XOPEN_SOURCE (definido no Makefile)
     current_filename = strdup(filename);
     if (!current_filename) return -1;
 
     log_file = fopen(current_filename, "a");
     if (!log_file) {
-        perror("Failed to open log file");
+        perror("Falha ao abrir ficheiro de log");
         free(current_filename);
         return -1;
     }
@@ -32,22 +31,20 @@ int logger_init(const char *filename, sem_t *log_sem){
     return 0;
 }
 
-// Helper: Get formatted time [10/Nov/2025:13:55:36 -0800]
+// Auxiliar: Obter tempo formatado [dia/Mês/Ano:Hora:Min:Seg Zona]
 static void get_time_string(char *buffer, size_t size) {
     time_t now = time(NULL);
 
-    // CORREÇÃO: Usar localtime_r (thread-safe) em vez de localtime
     struct tm t;
-    localtime_r(&now, &t);
+    localtime_r(&now, &t); // Thread-safe
 
     strftime(buffer, size, "[%d/%b/%Y:%H:%M:%S %z]", &t);
 }
 
-// Helper: Check size and rotate if necessary
+// Auxiliar: Verifica tamanho e roda o ficheiro se necessário (Log Rotation)
 static void check_and_rotate_log() {
     if (!log_file) return;
 
-    // Check current file size
     fseek(log_file, 0, SEEK_END);
     long size = ftell(log_file);
 
@@ -59,7 +56,7 @@ static void check_and_rotate_log() {
         rename(current_filename, new_name);
 
         log_file = fopen(current_filename, "a");
-        if (!log_file) perror("Failed to reopen log file");
+        if (!log_file) perror("Falha ao reabrir ficheiro de log");
     }
 }
 
@@ -74,7 +71,7 @@ void logger_log_request(const char *client_ip, const char *method, const char *p
     check_and_rotate_log();
 
     if (log_file) {
-        // Apache Combined Log Format
+        // Formato Apache Combined Log
         fprintf(log_file, "%s - %s \"%s %s HTTP/1.1\" %d %lu\n", client_ip, time_str, method, path, status_code, size);
         fflush(log_file); 
     }

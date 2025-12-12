@@ -12,10 +12,10 @@
 #include "http.h"
 #include "config.h"
 
-// Função auxiliar para enviar FD (usada internamente, mas pode estar aqui)
+// Envia um descritor de ficheiro (FD) através de um socket Unix
 int send_fd(int socket, int fd_to_send);
 
-// CORREÇÃO: Recebe apenas um 'int ipc_socket' em vez do array 'worker_sockets'
+// Função principal do processo Master (Loop de aceitação)
 void master_main(int server_fd, shared_memory_t * shm, semaphores_t * sems, int ipc_socket, config_t * conf);
 
 #endif

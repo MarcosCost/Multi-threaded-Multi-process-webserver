@@ -1,33 +1,28 @@
-/// worker_queue - A simple ADT  for local worker queues
-///
-/// Marcos Costa 125882
-/// José Mendes  114429
-/// 2025
-
 #ifndef LQ_H
 #define LQ_H
 
-#define MAX_LOCAL_SIZE 200
+#define MAX_LOCAL_SIZE 100
 
 #include <stdio.h>
 
-typedef struct
-{   
+typedef struct {
     int arr[MAX_LOCAL_SIZE];
     int back;
     int front;
-    int size;  // Added to track queue size
-} worker_queue_t ;
+    int size;
+} worker_queue_t;
 
+// Inicializa a fila local
 void initqueue(worker_queue_t * q);
 
+// Adiciona um elemento à fila
 void enqueue(worker_queue_t* q, int i);
 
+// Remove e retorna um elemento da fila
 int dequeue(worker_queue_t* q);
 
+// Verificações de estado
 int isFull(worker_queue_t* q);
 int isEmpty(worker_queue_t* q);
-
-
 
 #endif

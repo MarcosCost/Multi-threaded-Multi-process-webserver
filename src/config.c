@@ -13,20 +13,20 @@ int readConfigs(config_t * conf){
     int line_count = 0;
 
     while (fgets(line, sizeof(line), file) != NULL && line_count < 8) {
-        // Remove newline character
+        // Remover o caráter de nova linha
         line[strcspn(line, "\n")] = '\0';
-        
-        // Find the '=' character
+
+        // Encontrar o caráter '='
         char *value = strchr(line, '=');
         if (value == NULL) {
-            continue; // Skip lines without '='
+            continue;
         }
-        value++; // Move past the '=' character
+        value++;
 
-        // Assign to struct based on line number
+        // Atribuir à struct com base no número da linha
         switch(line_count) {
             case 0: conf->port = atoi(value); break;
-            case 1: 
+            case 1:
                 strncpy(conf->document_root, value, MAX_VALUE_LENGHT - 1);
                 conf->document_root[MAX_VALUE_LENGHT - 1] = '\0';
                 break;
@@ -40,20 +40,20 @@ int readConfigs(config_t * conf){
             case 6: conf->cache_size = atoi(value); break;
             case 7: conf->timeout = atoi(value); break;
         }
-        
+
         line_count++;
     }
 
     fclose(file);
-    return 1;   
+    return 1;
 
 }
 
 int initConfig(config_t * conf){
-    
-    //Resets memory to avoid garbage data
+
+    // Limpar memória (zeros)
     memset(conf, 0, sizeof(config_t));
-    
+
     if (readConfigs(conf)== -1)
     {
         printf("Error reading configurations\n");

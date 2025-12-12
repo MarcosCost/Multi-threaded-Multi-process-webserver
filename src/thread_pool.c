@@ -1,4 +1,3 @@
-// thread_pool.c
 #include "thread_pool.h"
 #include "http.h"
 #include "stats.h"
@@ -13,7 +12,7 @@ void* worker_thread(void * arg) {
     thread_pool_t* pool = (thread_pool_t*)arg;
 
     while (1) {
-        // --- 1. Sincronização da Queue ---
+        // 1. Sincronização da Fila (Produtor-Consumidor Local)
         pthread_mutex_lock(&pool->mutex);
 
         while (!pool->shutdown  &&  isEmpty(pool->worker_queue)) {
@@ -28,20 +27,18 @@ void* worker_thread(void * arg) {
         int fd = dequeue(pool->worker_queue);
         pthread_mutex_unlock(&pool->mutex);
 
-        // --- 2. Receção do Pedido ---
+        // 2. Receção do Pedido
         char buff[4096];
         ssize_t bytes_recv = recv(fd, buff, sizeof(buff) - 1, 0);
 
-        // CORREÇÃO: Tratar desconexão ou erro antes de prosseguir
         if (bytes_recv <= 0) {
             close(fd);
-            // Se foi erro (-1), opcionalmente faz log. Se foi 0, é close normal.
             continue;
         }
 
-        buff[bytes_recv] = '\0'; // Garantir null-termination
+        buff[bytes_recv] = '\0';
 
-        // --- 3. Processamento HTTP ---
+        // 3. Processamento HTTP
         http_request_t request;
         int status = 200;
         char status_message[20];
@@ -59,14 +56,13 @@ void* worker_thread(void * arg) {
                 strncat(path, "index.html", sizeof(path) - strlen(path) - 1);
             }
 
-            // --- 4. INTEGRAÇÃO CACHE LRU ---
-            // Tenta obter da cache primeiro
+            // 4. Integração Cache LRU
+            // Tenta obter da cache primeiro (Reader Lock)
             if (cache_get(pool->cache, path, (void**)&body, &body_size) == 0) {
                 // CACHE HIT
                 status = 200;
                 strcpy(status_message, "OK");
                 strcpy(mime_type, get_mimetype(path));
-                // printf("DEBUG: Cache HIT for %s\n", path); // Descomentar para debug
             }
             else {
                 // CACHE MISS - Ler do disco
@@ -89,10 +85,10 @@ void* worker_thread(void * arg) {
                             fread(body, 1, file_size, file);
                             body_size = file_size;
 
-                            // Adicionar à Cache apenas se leu com sucesso
+                            // Adicionar à Cache (Writer Lock gerido internamente)
                             cache_put(pool->cache, path, body, body_size);
                         } else {
-                            status = 500; // Falha no malloc
+                            status = 500;
                         }
                         fclose(file);
                     }
@@ -106,8 +102,6 @@ void* worker_thread(void * arg) {
                     char path_404[512];
                     snprintf(path_404, sizeof(path_404), "%s404.html", pool->shm->conf.document_root);
 
-                    // Nota: Não cacheamos o erro 404 associado ao path original
-                    // para evitar "envenenar" a cache se o ficheiro for criado depois.
                     FILE *file = fopen(path_404, "rb");
                     if (file) {
                         fseek(file, 0, SEEK_END);
@@ -120,7 +114,6 @@ void* worker_thread(void * arg) {
                         }
                         fclose(file);
                     } else {
-                        // Fallback hardcoded
                         const char *fallback = "<h1>404 Not Found</h1>";
                         body = strdup(fallback);
                         body_size = strlen(fallback);
@@ -132,7 +125,7 @@ void* worker_thread(void * arg) {
             strcpy(status_message, "Bad Request");
         }
 
-        // --- 5. Enviar Resposta ---
+        // 5. Enviar Resposta
         if (body != NULL || status == 200 || status == 404 || status == 503) {
             if (strcmp(request.method, "HEAD") != 0) {
                 send_http_response(fd, status, status_message, mime_type, body, body_size);
@@ -142,12 +135,12 @@ void* worker_thread(void * arg) {
             add_bytes_transferred(pool->shm, pool->sems, body_size);
         }
 
-        // --- 6. Logs e Limpeza ---
+        // 6. Logs e Limpeza
         logger_log_request("127.0.0.1", request.method, request.path, status, body_size);
         add_status_code(pool->shm, pool->sems, status);
 
         if (body != NULL) {
-            free(body); // Importante: cache_get devolve uma cópia mallocada, temos de libertar
+            free(body); // Liberta a cópia da cache ou o buffer de leitura
         }
 
         close(fd);
@@ -168,15 +161,13 @@ thread_pool_t* create_thread_pool(int num_threads, worker_queue_t* queue, shared
     pool->shm = shm;
     pool->sems = sems;
 
-    // --- Inicialização da Cache ---
-    // Converter MB do config para Bytes
+    // Inicialização da Cache (MB -> Bytes)
     size_t cache_capacity_bytes = (size_t)shm->conf.cache_size * 1024 * 1024;
     pool->cache = cache_init(cache_capacity_bytes);
 
     if (!pool->cache) {
-        printf("WARNING: Failed to initialize cache. Server will run without caching.\n");
+        printf("AVISO: Falha ao inicializar cache. O servidor correrá sem cache.\n");
     }
-    // ------------------------------
 
     pthread_mutex_init(&pool->mutex, NULL);
     pthread_cond_init(&pool->cond, NULL);
@@ -201,11 +192,9 @@ void destroy_thread_pool(thread_pool_t* pool){
         pthread_join(pool->threads[i], NULL);
     }
 
-    // --- Destruir Cache ---
     if (pool->cache) {
         cache_destroy(pool->cache);
     }
-    // ----------------------
 
     free(pool->threads);
     pthread_mutex_destroy(&pool->mutex);
